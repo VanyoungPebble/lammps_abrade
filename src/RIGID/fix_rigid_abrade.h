@@ -233,6 +233,7 @@ private:
   // Langevin thermostatting
   int langflag;                        // 0/1 = no/yes Langevin thermostat
   double t_start, t_stop, t_period;    // thermostat params
+  double t_period_rot;                 //rotational Langevin damping time
   double **langextra;                  // Langevin thermostat forces and torques
   int maxlang;                         // max size of langextra
   class RanMars *random;               // RNG

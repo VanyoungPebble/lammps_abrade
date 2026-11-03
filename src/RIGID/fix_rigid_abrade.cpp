@@ -199,6 +199,7 @@ FixRigidAbrade::FixRigidAbrade(LAMMPS *lmp, int narg, char **arg) :
 
   int seed;
   langflag = 0;
+  t_period_rot = -1.0;
   inpfile = nullptr;
   onemols = nullptr;
   reinitflag = 1;
@@ -236,6 +237,17 @@ FixRigidAbrade::FixRigidAbrade(LAMMPS *lmp, int narg, char **arg) :
       if (t_period <= 0.0) error->all(FLERR, "Fix rigid/abrade langevin period must be > 0.0");
       if (seed <= 0) error->all(FLERR, "6 Illegal fix rigid/abrade command");
       iarg += 5;
+
+    } else if (strcmp(arg[iarg], "rot_damp") == 0) {
+      if (iarg + 2 > narg)
+        error->all(FLERR, "Missing rot_damp value for fix rigid/abrade");
+
+      t_period_rot = utils::numeric(FLERR, arg[iarg + 1], false, lmp);
+
+      if (t_period_rot <= 0.0)
+        error->all(FLERR, "Fix rigid/abrade rot_damp must be > 0.0");
+
+      iarg += 2;
 
     } else if (strcmp(arg[iarg], "infile") == 0) {
       if (iarg + 2 > narg) error->all(FLERR, "7 Illegal fix rigid/abrade command");
@@ -419,6 +431,14 @@ FixRigidAbrade::FixRigidAbrade(LAMMPS *lmp, int narg, char **arg) :
     } else
       error->all(FLERR, "Illegal fix rigid/abrade command");
   }
+
+  // rot_damp is only valid with Langevin thermostatting
+  if (!langflag && t_period_rot > 0.0)
+    error->all(FLERR, "Fix rigid/abrade rot_damp requires langevin");
+
+  // Preserve the original behavior if rot_damp was not specified
+  if (langflag && t_period_rot < 0.0)
+    t_period_rot = t_period;
 
   // error check and further setup for Molecule template -- Not suported for fix rigid/abrade
   // if (onemols) {
@@ -1069,8 +1089,8 @@ void FixRigidAbrade::apply_langevin_thermostat()
     langextra[ibody][1] = gamma1*vcm[1] + gamma2*(random->uniform()-0.5);
     langextra[ibody][2] = gamma1*vcm[2] + gamma2*(random->uniform()-0.5);
 
-    gamma1 = -1.0 / t_period / ftm2v;
-    gamma2 = tsqrt * sqrt(24.0*boltz/t_period/dt/mvv2e) / ftm2v;
+  gamma1 = -1.0 / t_period_rot / ftm2v;
+  gamma2 = tsqrt * sqrt(24.0*boltz/t_period_rot/dt/mvv2e) / ftm2v;
 
     // convert omega from space frame to body frame
 
