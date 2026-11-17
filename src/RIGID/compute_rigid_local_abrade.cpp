@@ -210,7 +210,7 @@ void ComputeRigidLocalAbrade::compute_obb()
   if (any_overflow)
     error->all(FLERR,"Too many surface vertices for compute rigid/local_abrade OBB");
 
-  const int nlocal = static_cast<int>(local_ids.size()/2);
+  int nlocal = static_cast<int>(local_ids.size()/2);
   std::vector<int> counts(nprocs), idcounts(nprocs), xyzcounts(nprocs);
   std::vector<int> idoffsets(nprocs), xyzoffsets(nprocs);
   MPI_Allgather(&nlocal, 1, MPI_INT, counts.data(), 1, MPI_INT, world);
