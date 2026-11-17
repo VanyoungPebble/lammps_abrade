@@ -1,0 +1,114 @@
+{
+  "checks": [
+    {
+      "case": "box",
+      "ranks": 1,
+      "returncode": 0,
+      "wall_seconds": 0.01815066600102
+    },
+    {
+      "case": "box_mpi2",
+      "ranks": 2,
+      "returncode": 0,
+      "wall_seconds": 0.03089887500027544
+    },
+    {
+      "case": "box_offset",
+      "ranks": 1,
+      "returncode": 0,
+      "wall_seconds": 0.016762541999923997
+    },
+    {
+      "case": "box_offset_mpi2",
+      "ranks": 2,
+      "returncode": 0,
+      "wall_seconds": 0.029130249997251667
+    },
+    {
+      "case": "moving",
+      "ranks": 1,
+      "returncode": 0,
+      "wall_seconds": 0.040106500000547385
+    },
+    {
+      "case": "moving_mpi2",
+      "ranks": 2,
+      "returncode": 0,
+      "wall_seconds": 0.047994792003009934
+    },
+    {
+      "case": "restart",
+      "ranks": 1,
+      "returncode": 0,
+      "wall_seconds": 0.027587749998929212
+    },
+    {
+      "case": "impact_shape",
+      "ranks": 1,
+      "returncode": 0,
+      "wall_seconds": 0.09534529099983047
+    },
+    {
+      "case": "impact_old",
+      "ranks": 1,
+      "returncode": 0,
+      "wall_seconds": 0.055143333000160055
+    },
+    {
+      "case": "impact_baseline",
+      "ranks": 1,
+      "returncode": 0,
+      "wall_seconds": 0.055536166997626424
+    },
+    {
+      "case": "impact_shape_mpi2",
+      "ranks": 2,
+      "returncode": 0,
+      "wall_seconds": 0.10734125000089989
+    },
+    {
+      "case": "impact_old_mpi2",
+      "ranks": 2,
+      "returncode": 0,
+      "wall_seconds": 0.06873558300139848
+    },
+    {
+      "case": "impact_baseline_mpi2",
+      "ranks": 2,
+      "returncode": 0,
+      "wall_seconds": 0.0687984169999254
+    },
+    {
+      "case": "remesh_shape",
+      "ranks": 1,
+      "returncode": 1,
+      "wall_seconds": 0.01772641599745839
+    },
+    {
+      "case": "remesh_baseline",
+      "ranks": 1,
+      "returncode": 1,
+      "wall_seconds": 0.01647962499919231
+    }
+  ],
+  "known_baseline_failures": [
+    "Original rigid/abrade equalise/remesh aborts in MPICH before shape output; MPI_Allreduce uses MPI_LMP_BIGINT on int counts. Full remesh validation remains blocked."
+  ],
+  "passed": false,
+  "remesh_validated": false,
+  "node_deletion_output_validated": true,
+  "impact_mpi2_atom_count_initial": 388,
+  "impact_mpi2_atom_count_minimum": 386,
+  "baseline": "/private/tmp/shape-baseline-20261116/build/lmp",
+  "lmp": "/private/tmp/lammps-shape-build/lmp",
+  "core_checks_passed": true,
+  "actual_remesh_MPI2": {
+    "status": "shape_output_validated",
+    "nodes_deleted": 2,
+    "old_body_and_atomic_outputs_match_original_exactly": true,
+    "caution": "The original MPI datatype defect remains; successful execution here does not establish that the original remesh implementation is free of memory errors."
+  },
+  "baseline_commit": "82c9417ded44c284eef61e928b78a814131993e0",
+  "date": "2026-11-16",
+  "output_directory": "/private/tmp/shape-integration-20261116-reviewed"
+}

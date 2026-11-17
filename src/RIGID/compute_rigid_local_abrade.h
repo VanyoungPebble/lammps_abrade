@@ -21,6 +21,7 @@ ComputeStyle(rigid/local_abrade,ComputeRigidLocalAbrade);
 #define LMP_COMPUTE_RIGID_LOCAL_ABRADE_H
 
 #include "compute.h"
+#include "shape_obb.h"
 
 namespace LAMMPS_NS {
 
@@ -44,7 +45,11 @@ class ComputeRigidLocalAbrade : public Compute {
   double *vlocal;
   double **alocal;
 
+  int obb_flag;
+  std::vector<ShapeOBB::Result> obb_results;
+
   int compute_rigid(int);
+  void compute_obb();
   void reallocate(int);
 };
 
