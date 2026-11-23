@@ -1,0 +1,40 @@
+# Isolated demonstration: moving/spinning 2 x 3 x 4 cuboid.
+# Copy this input and data.Box to an empty run directory.
+units cgs
+boundary p p p
+atom_style hybrid molecular sphere
+newton on
+region box block -10 10 -10 10 -10 10
+create_box 2 box angle/types 1 extra/angle/per/atom 10
+angle_style zero
+angle_coeff * 75.0
+molecule Box data.Box
+create_atoms 0 single 0 0 0 mol Box 1729871 rotate 0 0 0 1 units box
+neighbor 0.4 multi
+comm_modify mode multi vel yes
+pair_style granular
+pair_coeff * * hertz 1e8 0.55 tangential linear_history 1e8 1.0 0.39 damping coeff_restitution limit_damping
+group owning id 1
+group owned subtract all owning
+set group owning type 2
+neigh_modify collection/type 2 1 2
+comm_modify cutoff/multi 1 6.0 cutoff/multi 2 6.0
+neigh_modify exclude molecule/intra all
+neigh_modify exclude group owning owned
+neigh_modify exclude molecule/inter owning
+variable ux atom -50*y+12000
+variable uy atom 50*x
+velocity all set v_ux v_uy 0
+fix abrade all rigid/abrade 1e20 0.25 1.42 molecule normals
+
+# Only these three lines enable the new measurement.
+compute ap owned projected/area 1 0 0
+dump projected all local 5 projected_area.dump c_ap[1] c_ap[2]
+dump_modify projected sort 1 format float %.17g
+
+dump positions all custom 5 atoms.dump id mol xu yu zu vx vy vz fx fy fz
+dump_modify positions sort id format float %.17g
+timestep 1e-4
+thermo 5
+thermo_style custom step atoms
+run 20
