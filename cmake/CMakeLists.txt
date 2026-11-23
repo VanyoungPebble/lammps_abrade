@@ -595,6 +595,11 @@ foreach(PKG_WITH_INCL KSPACE PYTHON ML-IAP VORONOI COLVARS ML-HDNNP MDI MOLFILE 
 endforeach()
 
 # settings for misc packages and styles
+if(PKG_RIGID)
+  find_package(Qhull CONFIG REQUIRED)
+  target_link_libraries(lammps PRIVATE Qhull::qhullcpp Qhull::qhullstatic_r)
+endif()
+
 if(PKG_MISC)
   option(LAMMPS_ASYNC_IMD "Asynchronous IMD processing" OFF)
   mark_as_advanced(LAMMPS_ASYNC_IMD)
