@@ -86,15 +86,15 @@ private:
   
   bool valid_angle_check(int, int, int, const std::vector<std::vector<double>>  &, const std::vector<double>  &);
   void triangle_thetas(int, int, int, const std::vector<std::vector<double>>  &, double *);
-  void remesh(std::vector<int>);
+  void remesh(std::vector<tagint>);
   
   void offset_vertices_inwards(void);
   void offset_vertices_outwards(void);
 
-  std::vector<int> dlist; // list of atom tags to be remeshed on a call of remesh()
-  std::vector<int> body_dlist; // list of associated body tags to be remeshed. This is required since there maybe a case where a proc does not own the dlist atom and so would be unable to access body properties
-  std::vector<int> total_dlist;
-  std::vector<int> total_body_dlist;
+  std::vector<tagint> dlist; // list of atom tags to be remeshed on a call of remesh()
+  std::vector<tagint> body_dlist; // list of associated body tags to be remeshed. This is required since there maybe a case where a proc does not own the dlist atom and so would be unable to access body properties
+  std::vector<tagint> total_dlist;
+  std::vector<tagint> total_body_dlist;
 
   // it is possible that these could be made into body properties. 
   std::vector<std::vector<tagint>> boundaries;

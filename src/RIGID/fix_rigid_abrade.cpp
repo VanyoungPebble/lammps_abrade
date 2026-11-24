@@ -2041,12 +2041,12 @@ void FixRigidAbrade::offset_vertices_outwards(){
     from owned bodies and rebuild the local topology into overflow lists.
 ---------------------------------------------------------------------- */
 
-void FixRigidAbrade::remesh(std::vector<int> dlist)
+void FixRigidAbrade::remesh(std::vector<tagint> dlist)
 {
 
   // Variable to store the current atom being removed and the tag of the atom owning its body
-  int remove_tag = 0;
-  int body_remove_tag = 0;
+  tagint remove_tag = 0;
+  tagint body_remove_tag = 0;
 
   // clearing remeshing vectors and setting flags
   boundaries.clear();
@@ -6020,9 +6020,9 @@ void FixRigidAbrade::unpack_forward_comm(int n, int first, double *buf)
 
         // unpack new_angles_list
         for (int l = 0; l < rec_angles_size; l++) {
-          int angle_atom1 = static_cast<tagint>(buf[m++]);
-          int angle_atom2 = static_cast<tagint>(buf[m++]);
-          int angle_atom3 = static_cast<tagint>(buf[m++]);
+          tagint angle_atom1 = static_cast<tagint>(buf[m++]);
+          tagint angle_atom2 = static_cast<tagint>(buf[m++]);
+          tagint angle_atom3 = static_cast<tagint>(buf[m++]);
 
           std::vector<tagint> temp = {angle_atom1, angle_atom2, angle_atom3};
           // check that only one copy is added - required for periodic boundaries
@@ -6379,7 +6379,7 @@ void FixRigidAbrade::unpack_reverse_comm(int n, int *list, double *buf)
       // Additionally, check that its atom tag is larger (to create consistency across multiple runs if two incoming atoms have the same area)
 
       double incoming_min_area_atom = buf[m++];
-      int incoming_min_area_atom_tag = static_cast<tagint>(buf[m++]);
+      tagint incoming_min_area_atom_tag = static_cast<tagint>(buf[m++]);
 
       if ((incoming_min_area_atom <= (body[bodyown[j]].min_area_atom * (1.0 + 0.001)))) {
 
@@ -6500,8 +6500,8 @@ void FixRigidAbrade::unpack_reverse_comm(int n, int *list, double *buf)
 
       if (rec_edges_size) {
         for (int l = 0; l < rec_edges_size; l++) {
-          int edge_atom1 = static_cast<tagint>(buf[m++]);
-          int edge_atom2 = static_cast<tagint>(buf[m++]);
+          tagint edge_atom1 = static_cast<tagint>(buf[m++]);
+          tagint edge_atom2 = static_cast<tagint>(buf[m++]);
           edges[rec_array_index].push_back({edge_atom1, edge_atom2});
         }
       }
@@ -6839,19 +6839,19 @@ void FixRigidAbrade::check(int flag)
   for (int i = 0; i < atom->nlocal; i++) {
     if (bodyown[i] >= 0) {
       if (bodytag[i] != atom->tag[i]) {
-        printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+        printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
         errorx->one(FLERR,"BAD AAA");
       }
       if (bodyown[i] < 0 || bodyown[i] >= nlocal_body) {
-        printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+        printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
         errorx->one(FLERR,"BAD BBB");
       }
       if (atom2body[i] != bodyown[i]) {
-        printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+        printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
         errorx->one(FLERR,"BAD CCC");
       }
       if (body[bodyown[i]].ilocal != i) {
-        printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+        printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
         errorx->one(FLERR,"BAD DDD");
       }
     }
@@ -6860,11 +6860,11 @@ void FixRigidAbrade::check(int flag)
   for (int i = 0; i < atom->nlocal; i++) {
     if (bodyown[i] < 0 && bodytag[i] > 0) {
       if (atom2body[i] < 0 || atom2body[i] >= nlocal_body+nghost_body) {
-        printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+        printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
         errorx->one(FLERR,"BAD EEE");
       }
       if (bodytag[i] != atom->tag[body[atom2body[i]].ilocal]) {
-        printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+        printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
         errorx->one(FLERR,"BAD FFF");
       }
     }
@@ -6874,13 +6874,13 @@ void FixRigidAbrade::check(int flag)
     if (bodyown[i] >= 0) {
       if (bodyown[i] < nlocal_body ||
           bodyown[i] >= nlocal_body+nghost_body) {
-        printf("Values %d %d: %d %d %d\n",
+        printf("Values %d " TAGINT_FORMAT ": %d %d %d\n",
                i,atom->tag[i],bodyown[i],nlocal_body,nghost_body);
-        printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+        printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
         errorx->one(FLERR,"BAD GGG");
       }
       if (body[bodyown[i]].ilocal != i) {
-        printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+        printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
         errorx->one(FLERR,"BAD HHH");
       }
     }
@@ -6888,12 +6888,12 @@ void FixRigidAbrade::check(int flag)
 
   for (int i = 0; i < nlocal_body; i++) {
     if (body[i].ilocal < 0 || body[i].ilocal >= atom->nlocal) {
-      printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+      printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
       errorx->one(FLERR,"BAD III");
     }
     if (bodytag[body[i].ilocal] != atom->tag[body[i].ilocal] ||
         bodyown[body[i].ilocal] != i) {
-      printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+      printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
       errorx->one(FLERR,"BAD JJJ");
     }
   }
@@ -6901,11 +6901,11 @@ void FixRigidAbrade::check(int flag)
   for (int i = nlocal_body; i < nlocal_body + nghost_body; i++) {
     if (body[i].ilocal < atom->nlocal ||
         body[i].ilocal >= atom->nlocal + atom->nghost) {
-      printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+      printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
       errorx->one(FLERR,"BAD KKK");
     }
     if (bodyown[body[i].ilocal] != i) {
-      printf("Proc %d, step %ld, flag %d\n",comm->me,update->ntimestep,flag);
+      printf("Proc %d, step " BIGINT_FORMAT ", flag %d\n",comm->me,update->ntimestep,flag);
       errorx->one(FLERR,"BAD LLL");
     }
   }
