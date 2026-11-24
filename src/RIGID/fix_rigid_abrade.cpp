@@ -5151,7 +5151,7 @@ void FixRigidAbrade::write_restart_file(const char *file)
 
       for (int i = 0; i < recvrow; i++){
         fprintf(fp,
-                "%d %-1.16e\n",
+                TAGINT_FORMAT " %-1.16e\n",
                 static_cast<tagint>(buf[i][0]), buf[i][1]);
       }
     }
@@ -5225,7 +5225,7 @@ void FixRigidAbrade::write_restart_file(const char *file)
 
       for (int i = 0; i < recvrow; i++){
         fprintf(fp,
-                "%d %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e\n",
+                TAGINT_FORMAT " %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e\n",
                 static_cast<tagint>(body_buf[i][0]), body_buf[i][1], body_buf[i][2], body_buf[i][3], body_buf[i][4], body_buf[i][5], body_buf[i][6], body_buf[i][7], body_buf[i][8], body_buf[i][9]);
       }
     }
