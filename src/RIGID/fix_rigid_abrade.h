@@ -26,6 +26,7 @@ namespace LAMMPS_NS {
 
 class FixRigidAbrade : public Fix {
   friend class ComputeRigidLocalAbrade;
+  friend class FixHydroDrag;
 
  public:
   FixRigidAbrade(class LAMMPS *, int, char **);
@@ -253,6 +254,9 @@ private:
 
   char *id_gravity;    // ID of fix gravity command to add gravity forces
   double *gvec;        // ptr to gravity vector inside the fix
+
+  char *id_drag;                    // ID of fix hydro/drag command to add drag forces
+  class FixHydroDrag *fix_drag;     // ptr to that fix, set in init()
 
   double p_current[3], p_target[3];
 

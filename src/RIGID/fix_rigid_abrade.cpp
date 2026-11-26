@@ -13,6 +13,7 @@
 ------------------------------------------------------------------------- */
 
 #include "fix_rigid_abrade.h"
+#include "fix_hydro_drag.h"
 
 #include "atom.h"
 #include "atom_vec.h"
@@ -76,7 +77,7 @@ FixRigidAbrade::FixRigidAbrade(LAMMPS *lmp, int narg, char **arg) :
     displace(nullptr), unwrap(nullptr), eflags(nullptr),
     avec_ellipsoid(nullptr), avec_line(nullptr), avec_tri(nullptr), counts(nullptr),
     itensor(nullptr), mass_body(nullptr), langextra(nullptr), random(nullptr), id_dilate(nullptr),
-    id_gravity(nullptr), onemols(nullptr)
+    id_gravity(nullptr), id_drag(nullptr), fix_drag(nullptr), onemols(nullptr)
 {
   int i;
 
@@ -385,6 +386,12 @@ FixRigidAbrade::FixRigidAbrade(LAMMPS *lmp, int narg, char **arg) :
       id_gravity = utils::strdup(arg[iarg + 1]);
       iarg += 2;
 
+    } else if (strcmp(arg[iarg], "drag") == 0) {
+      if (iarg + 2 > narg) error->all(FLERR, "Illegal fix rigid/abrade command");
+      delete[] id_drag;
+      id_drag = utils::strdup(arg[iarg + 1]);
+      iarg += 2;
+
     } else if (strcmp(arg[iarg], "stationary") == 0) {
       if (iarg + 1 > narg) error->all(FLERR, "Illegal fix rigid/abrade command");
       dynamic_flag = 0;
@@ -586,6 +593,7 @@ FixRigidAbrade::~FixRigidAbrade()
   delete[] inpfile;
   delete[] id_dilate;
   delete[] id_gravity;
+  delete[] id_drag;
 
   memory->destroy(langextra);
   memory->destroy(mass_body);
@@ -667,6 +675,16 @@ void FixRigidAbrade::init()
                        "bodies unless the gravity keyword is used");
   }
 
+  // warn if fix hydro/drag is defined without direct reference through the drag keyword
+
+  if (!id_drag) {
+    if (modify->get_fix_by_style("^hydro/drag").size() > 0)
+      if (comm->me == 0)
+        error->warning(FLERR,
+                       "Drag will not be applied to rigid bodies "
+                       "unless the drag keyword is used");
+  }
+
   // error if a fix changing the box comes before rigid fix
 
   bool boxflag = false;
@@ -686,6 +704,18 @@ void FixRigidAbrade::init()
                  id_gravity);
     int tmp;
     gvec = (double *) ifix->extract("gvec", tmp);
+  }
+
+  // find fix hydro/drag named by the drag keyword
+  // it is called in compute_forces_and_torques() to add drag to each body
+
+  fix_drag = nullptr;
+  if (id_drag) {
+    auto *ifix = modify->get_fix_by_id(id_drag);
+    if (!ifix) error->all(FLERR, "Fix rigid/abrade cannot find fix hydro/drag ID {}", id_drag);
+    if (!utils::strmatch(ifix->style, "^hydro/drag"))
+      error->all(FLERR, "Fix rigid/abrade drag fix ID {} is not a hydro/drag fix style", id_drag);
+    fix_drag = dynamic_cast<FixHydroDrag *>(ifix);
   }
 
   // checking to see if Newton on is specified such that angles are not double counted. 
@@ -2733,6 +2763,11 @@ void FixRigidAbrade::compute_forces_and_torques()
       fcm[2] += gvec[2] * mass;
     }
   }
+
+  // add hydrodynamic drag to COM of each body (fix hydro/drag)
+  // added here, not to per-atom forces, so it never drives abrasion
+
+  if (fix_drag) fix_drag->add_body_forces(this);
 }
 
 /* ---------------------------------------------------------------------- */
