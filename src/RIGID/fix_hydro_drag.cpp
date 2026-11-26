@@ -6,17 +6,97 @@
 
 #include "fix_hydro_drag.h"
 
+#include "atom.h"
 #include "comm.h"
 #include "error.h"
 #include "fix_rigid_abrade.h"
 #include "math_const.h"
 #include "math_extra.h"
 
+#include <libqhullcpp/Qhull.h>
+#include <libqhullcpp/QhullError.h>
+
+#include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <sstream>
 
 using namespace LAMMPS_NS;
 using MathConst::MY_PI;
+
+namespace {
+using Point = std::array<double, 2>;
+
+/* ----------------------------------------------------------------------
+   2d convex hull of points -> enclosed area and perimeter
+   copied from projected_hull_area() in compute_projected_area.cpp and
+   changed to also return the perimeter and to sort the points before
+   removing duplicates; returns false if the hull cannot be computed
+   (fewer than 3 distinct points, all points collinear, Qhull error)
+------------------------------------------------------------------------- */
+
+bool hull_area_perimeter(std::vector<Point> &points, double &area, double &perimeter)
+{
+  // remove exact duplicates, e.g. front and back corners of a cube
+  // that is face-on to the flow project onto the same point
+
+  std::sort(points.begin(), points.end());
+  points.erase(std::unique(points.begin(), points.end()), points.end());
+  if (points.size() < 3) return false;
+
+  // shift and scale the points into a unit box to keep Qhull's
+  // tolerances independent of units and position
+
+  Point low = points.front(), high = low;
+  for (const auto &p : points)
+    for (int k = 0; k < 2; k++) {
+      low[k] = std::min(low[k], p[k]);
+      high[k] = std::max(high[k], p[k]);
+    }
+  const double scale = std::max(high[0] - low[0], high[1] - low[1]);
+  if (!std::isfinite(scale) || scale <= 0.0) return false;
+
+  std::vector<double> coordinates;
+  coordinates.reserve(2 * points.size());
+  for (const auto &p : points) {
+    coordinates.push_back((p[0] - low[0]) / scale);
+    coordinates.push_back((p[1] - low[1]) / scale);
+  }
+
+  std::ostringstream diagnostics;
+  try {
+    orgQhull::Qhull hull;
+    hull.setErrorStream(&diagnostics);
+    hull.disableOutputStream();
+    hull.runQhull("hydro/drag", 2, static_cast<int>(points.size()), coordinates.data(), "Qt");
+    // in two dimensions Qhull volume() is the enclosed area and area() is the perimeter
+    area = hull.volume() * scale * scale;
+    perimeter = hull.area() * scale;
+    return std::isfinite(area) && area > 0.0 && std::isfinite(perimeter);
+  } catch (const orgQhull::QhullError &) {
+    return false;
+  }
+}
+
+/* ----------------------------------------------------------------------
+   two unit vectors e1, e2 spanning the plane perpendicular to the unit
+   vector dir; same construction as in compute projected/area: use the
+   coordinate axis least parallel to dir as a helper
+------------------------------------------------------------------------- */
+
+void plane_basis(const double *dir, double *e1, double *e2)
+{
+  int axis = 0;
+  for (int k = 1; k < 3; k++)
+    if (std::abs(dir[k]) < std::abs(dir[axis])) axis = k;
+  double helper[3] = {0.0, 0.0, 0.0};
+  helper[axis] = 1.0;
+
+  MathExtra::cross3(dir, helper, e1);
+  MathExtra::norm3(e1);
+  MathExtra::cross3(dir, e1, e2);
+}
+}    // namespace
 
 /* ----------------------------------------------------------------------
    fix ID group hydro/drag rho <rho> nu <nu> flow <ux> <uy> <uz>
@@ -86,30 +166,61 @@ void FixHydroDrag::init()
   // process, so only serial runs are supported
 
   if (comm->nprocs > 1) error->all(FLERR, "Fix hydro/drag currently supports only 1 MPI process");
+
+  // the projected area correction uses the atom radii
+
+  if (!atom->radius_flag) error->all(FLERR, "Fix hydro/drag requires atom attribute radius");
 }
 
 /* ----------------------------------------------------------------------
    add drag (and optionally buoyancy) to the COM force of each body
-   work in progress: relative velocity and shape factors only,
+   work in progress: relative velocity, shape factors and projected area,
    no force is added yet
 ------------------------------------------------------------------------- */
 
 void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
 {
-  for (int ibody = 0; ibody < rigid->nlocal_body; ibody++) {
+  const int nbody = rigid->nlocal_body;
+  bodydata.resize(nbody);
+
+  // 1. per body: relative velocity, and the plane (e1, e2) perpendicular
+  //    to the flow, in body coordinates
+  //    the vertices (displace) are stored in body coordinates, so it is
+  //    cheaper to rotate the one flow direction than all the vertices
+
+  for (int ibody = 0; ibody < nbody; ibody++) {
     FixRigidAbrade::Body &b = rigid->body[ibody];
+    BodyData &bd = bodydata[ibody];
+    bd.points.clear();
+    bd.rmax = 0.0;
 
-    // relative velocity of the fluid with respect to the body COM
-
-    double urel[3];
-    urel[0] = flow[0] - b.vcm[0];
-    urel[1] = flow[1] - b.vcm[1];
-    urel[2] = flow[2] - b.vcm[2];
-    const double umag = MathExtra::len3(urel);
+    bd.urel[0] = flow[0] - b.vcm[0];
+    bd.urel[1] = flow[1] - b.vcm[1];
+    bd.urel[2] = flow[2] - b.vcm[2];
+    bd.umag = MathExtra::len3(bd.urel);
 
     // no relative flow: no drag, and no flow direction to project along
 
-    if (umag == 0.0) continue;
+    if (bd.umag == 0.0) continue;
+
+    double uhat[3], dir[3];
+    uhat[0] = bd.urel[0] / bd.umag;
+    uhat[1] = bd.urel[1] / bd.umag;
+    uhat[2] = bd.urel[2] / bd.umag;
+    MathExtra::transpose_matvec(b.ex_space, b.ey_space, b.ez_space, uhat, dir);
+    plane_basis(dir, bd.e1, bd.e2);
+  }
+
+  // 2. one pass over the atoms: project the surface atoms of each body
+
+  collect_projected_points(rigid);
+
+  // 3. per body: shape factors and projected area
+
+  for (int ibody = 0; ibody < nbody; ibody++) {
+    FixRigidAbrade::Body &b = rigid->body[ibody];
+    BodyData &bd = bodydata[ibody];
+    if (bd.umag == 0.0) continue;
 
     // shape factors from the body volume and surface area,
     // both kept up to date by fix rigid/abrade after abrasion
@@ -117,8 +228,60 @@ void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
     // phi = sphericity, clamped to <= 1: mesh round-off can push it slightly
     //   above 1, and then -log10(phi) < 0 would make the drag formula NaN
 
-    [[maybe_unused]] const double d = cbrt(6.0 * b.volume / MY_PI);    // used from step 3b on
-    [[maybe_unused]] double phi = MY_PI * d * d / b.surface_area;      // used from step 3c on
+    const double d = cbrt(6.0 * b.volume / MY_PI);
+    [[maybe_unused]] double phi = MY_PI * d * d / b.surface_area;    // used from step 3c on
     if (phi > 1.0) phi = 1.0;
+
+    // projected area: 2d convex hull of the projected atom centres
+
+    double area, perimeter;
+    if (!hull_area_perimeter(bd.points, area, perimeter))
+      error->one(FLERR, "Fix hydro/drag cannot compute the projected area of rigid body {}",
+                 atom->tag[b.ilocal]);
+
+    // atom radius correction: the hull of the atom centres grown outwards
+    // by the atom radius r has the exact area A + P*r + pi*r^2
+    // (A = hull area, P = hull perimeter; assumes one radius per body)
+    // NOTE: always applied, independent of the offset keyword of
+    //   fix rigid/abrade; without offset the body volume and surface area
+    //   are computed from the atom centres, so this may need to be linked
+    //   to offset later
+
+    const double r = bd.rmax;
+    const double aperp = area + perimeter * r + MY_PI * r * r;
+
+    // transverse sphericity
+
+    [[maybe_unused]] const double phiperp = 0.25 * MY_PI * d * d / aperp;    // used from step 3c on
+  }
+}
+
+/* ----------------------------------------------------------------------
+   bucket method: a single pass over the local atoms; each surface atom of
+   a body with relative flow is projected onto that body's plane (e1, e2)
+   and appended to that body's point list, and the largest atom radius of
+   each body is recorded
+   uses the atom centres in body coordinates (displace), so periodic
+   images do not matter; the COM atom of each body is skipped
+------------------------------------------------------------------------- */
+
+void FixHydroDrag::collect_projected_points(FixRigidAbrade *rigid)
+{
+  const int nlocal = atom->nlocal;
+  const int nbody = static_cast<int>(bodydata.size());
+  tagint *tag = atom->tag;
+  double *radius = atom->radius;
+
+  for (int i = 0; i < nlocal; i++) {
+    const int ibody = rigid->atom2body[i];
+    if (ibody < 0 || ibody >= nbody) continue;      // not in a body owned by this process
+    if (rigid->bodytag[i] == tag[i]) continue;      // COM atom of the body
+
+    BodyData &bd = bodydata[ibody];
+    if (bd.umag == 0.0) continue;
+
+    const double *x = rigid->displace[i];
+    bd.points.push_back({MathExtra::dot3(x, bd.e1), MathExtra::dot3(x, bd.e2)});
+    bd.rmax = std::max(bd.rmax, radius[i]);
   }
 }

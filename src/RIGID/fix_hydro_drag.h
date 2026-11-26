@@ -15,10 +15,13 @@ FixStyle(hydro/drag,FixHydroDrag);
 
 #include "fix.h"
 
+#include <array>
+#include <vector>
+
 namespace LAMMPS_NS {
 
 // Hydrodynamic drag (Holzer & Sommerfeld 2008) on fix rigid/abrade bodies.
-// This fix only stores the fluid parameters.  It does not act on its own:
+// This fix holds the fluid parameters and computes the drag, but it does not act on its own:
 // fix rigid/abrade calls add_body_forces() when it sums body forces, so the
 // drag goes onto each body's COM force and never into the per-atom forces
 // that drive abrasion.
@@ -37,6 +40,19 @@ class FixHydroDrag : public Fix {
   double nu;            // fluid kinematic viscosity
   double flow[3];       // uniform, steady fluid velocity
   int buoyancy_flag;    // 1 = also add buoyancy, 0 = drag only
+
+  // per-body work data, rebuilt at every call of add_body_forces()
+
+  struct BodyData {
+    double urel[3];                              // fluid velocity relative to the body COM
+    double umag;                                 // |urel|; 0 = no relative flow, body skipped
+    double e1[3], e2[3];                         // plane perpendicular to the flow, body coords
+    std::vector<std::array<double, 2>> points;   // surface atoms projected onto (e1, e2)
+    double rmax;                                 // largest radius among those atoms
+  };
+  std::vector<BodyData> bodydata;    // one entry per body owned by this process
+
+  void collect_projected_points(class FixRigidAbrade *);
 };
 
 }    // namespace LAMMPS_NS
