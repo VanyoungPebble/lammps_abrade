@@ -863,7 +863,7 @@ void FixRigidAbrade::setup_post_neighbor()
     if (remesh_flag) end_of_step();
 
     // Reset abraded flags
-    for (int ibody; ibody < (nlocal_body + nghost_body); ibody++) body[ibody].abraded_flag = 0;
+    for (int ibody = 0; ibody < (nlocal_body + nghost_body); ibody++) body[ibody].abraded_flag = 0;
     proc_abraded_flag = 0;
 
     // Mark that the setup has finished
@@ -2957,7 +2957,7 @@ void FixRigidAbrade::end_of_step()
     AtomVec *avec = atom->avec;
 
     int i = 0;
-    int removed_count = 0;
+    bigint removed_count = 0;
     while (i < nlocal) {
       if (count(total_dlist.begin(), total_dlist.end(), atom->tag[i])) {
         removed_count++;
@@ -2969,7 +2969,7 @@ void FixRigidAbrade::end_of_step()
         i++;
     }
 
-    int remove_count_all = 0;
+    bigint remove_count_all = 0;
     MPI_Allreduce(&removed_count, &remove_count_all, 1, MPI_LMP_BIGINT, MPI_SUM, world);
 
     // Print the initial amount of atoms remeshed under the equalise keyword
