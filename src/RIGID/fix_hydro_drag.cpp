@@ -10,6 +10,7 @@
 #include "comm.h"
 #include "error.h"
 #include "fix_rigid_abrade.h"
+#include "force.h"
 #include "math_const.h"
 #include "math_extra.h"
 
@@ -174,8 +175,7 @@ void FixHydroDrag::init()
 
 /* ----------------------------------------------------------------------
    add drag (and optionally buoyancy) to the COM force of each body
-   work in progress: relative velocity, shape factors and projected area,
-   no force is added yet
+   drag only so far: buoyancy is parsed but not applied yet
 ------------------------------------------------------------------------- */
 
 void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
@@ -215,7 +215,7 @@ void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
 
   collect_projected_points(rigid);
 
-  // 3. per body: shape factors and projected area
+  // 3. per body: shape factors, projected area and drag force
 
   for (int ibody = 0; ibody < nbody; ibody++) {
     FixRigidAbrade::Body &b = rigid->body[ibody];
@@ -229,7 +229,7 @@ void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
     //   above 1, and then -log10(phi) < 0 would make the drag formula NaN
 
     const double d = cbrt(6.0 * b.volume / MY_PI);
-    [[maybe_unused]] double phi = MY_PI * d * d / b.surface_area;    // used from step 3c on
+    double phi = MY_PI * d * d / b.surface_area;
     if (phi > 1.0) phi = 1.0;
 
     // projected area: 2d convex hull of the projected atom centres
@@ -252,7 +252,30 @@ void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
 
     // transverse sphericity
 
-    [[maybe_unused]] const double phiperp = 0.25 * MY_PI * d * d / aperp;    // used from step 3c on
+    const double phiperp = 0.25 * MY_PI * d * d / aperp;
+
+    // drag force, Holzer & Sommerfeld (2008), simplified form with
+    // phi_parallel replaced by phi_perp:
+    //   F = 1/2 rho (pi d^2/4) C_D |u| urel
+    // with Re = |u| d / nu substituted and multiplied out,
+    //   C_D |u| = a1 + a2 sqrt|u| + a3 |u|
+    // so nothing is divided by |u| or Re (no 0*inf = NaN as |u| -> 0)
+    // divide by ftm2v to convert mass*length/time^2 to force units
+
+    const double nud = nu / d;
+    const double a1 = (8.0 / sqrt(phiperp) + 16.0 / sqrt(phi)) * nud;
+    const double a2 = 3.0 / pow(phi, 0.75) * sqrt(nud);
+    const double a3 = 0.42 * pow(10.0, 0.4 * pow(-log10(phi), 0.2)) / phiperp;
+
+    const double coeff = 0.5 * rho * (0.25 * MY_PI * d * d) *
+        (a1 + a2 * sqrt(bd.umag) + a3 * bd.umag) / force->ftm2v;
+
+    // add to the COM force only, not to the atoms, so drag never drives
+    // abrasion; no torque
+
+    b.fcm[0] += coeff * bd.urel[0];
+    b.fcm[1] += coeff * bd.urel[1];
+    b.fcm[2] += coeff * bd.urel[2];
   }
 }
 
