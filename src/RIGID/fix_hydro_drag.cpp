@@ -8,10 +8,15 @@
 
 #include "comm.h"
 #include "error.h"
+#include "fix_rigid_abrade.h"
+#include "math_const.h"
+#include "math_extra.h"
 
+#include <cmath>
 #include <cstring>
 
 using namespace LAMMPS_NS;
+using MathConst::MY_PI;
 
 /* ----------------------------------------------------------------------
    fix ID group hydro/drag rho <rho> nu <nu> flow <ux> <uy> <uz>
@@ -85,7 +90,35 @@ void FixHydroDrag::init()
 
 /* ----------------------------------------------------------------------
    add drag (and optionally buoyancy) to the COM force of each body
-   skeleton only: no force is added yet
+   work in progress: relative velocity and shape factors only,
+   no force is added yet
 ------------------------------------------------------------------------- */
 
-void FixHydroDrag::add_body_forces(FixRigidAbrade * /*rigid*/) {}
+void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
+{
+  for (int ibody = 0; ibody < rigid->nlocal_body; ibody++) {
+    FixRigidAbrade::Body &b = rigid->body[ibody];
+
+    // relative velocity of the fluid with respect to the body COM
+
+    double urel[3];
+    urel[0] = flow[0] - b.vcm[0];
+    urel[1] = flow[1] - b.vcm[1];
+    urel[2] = flow[2] - b.vcm[2];
+    const double umag = MathExtra::len3(urel);
+
+    // no relative flow: no drag, and no flow direction to project along
+
+    if (umag == 0.0) continue;
+
+    // shape factors from the body volume and surface area,
+    // both kept up to date by fix rigid/abrade after abrasion
+    // d = diameter of the sphere with the same volume
+    // phi = sphericity, clamped to <= 1: mesh round-off can push it slightly
+    //   above 1, and then -log10(phi) < 0 would make the drag formula NaN
+
+    [[maybe_unused]] const double d = cbrt(6.0 * b.volume / MY_PI);    // used from step 3b on
+    [[maybe_unused]] double phi = MY_PI * d * d / b.surface_area;      // used from step 3c on
+    if (phi > 1.0) phi = 1.0;
+  }
+}
