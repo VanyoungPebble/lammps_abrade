@@ -175,11 +175,16 @@ void FixHydroDrag::init()
 
 /* ----------------------------------------------------------------------
    add drag (and optionally buoyancy) to the COM force of each body
-   drag only so far: buoyancy is parsed but not applied yet
 ------------------------------------------------------------------------- */
 
 void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
 {
+  // buoyancy uses the gravity vector that fix rigid/abrade gets from its
+  // gravity keyword; without that keyword rigid->gvec is not set
+
+  if (buoyancy_flag && !rigid->id_gravity)
+    error->all(FLERR, "Fix hydro/drag buoyancy requires the gravity keyword of fix rigid/abrade");
+
   const int nbody = rigid->nlocal_body;
   bodydata.resize(nbody);
 
@@ -215,11 +220,28 @@ void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
 
   collect_projected_points(rigid);
 
-  // 3. per body: shape factors, projected area and drag force
+  // 3. per body: buoyancy, then shape factors, projected area and drag force
 
   for (int ibody = 0; ibody < nbody; ibody++) {
     FixRigidAbrade::Body &b = rigid->body[ibody];
     BodyData &bd = bodydata[ibody];
+
+    // buoyancy -rho_f V g, does not depend on the flow, so it is added
+    // before the no-flow skip below
+    // gvec is an acceleration (force/mass units), so no ftm2v, the same as
+    // fix rigid/abrade adding gravity as gvec * mass
+    // assumes the body is fully submerged and of uniform density: the
+    // centre of buoyancy is the COM, so there is no torque
+
+    if (buoyancy_flag) {
+      const double mfluid = rho * b.volume;    // mass of displaced fluid
+      b.fcm[0] -= mfluid * rigid->gvec[0];
+      b.fcm[1] -= mfluid * rigid->gvec[1];
+      b.fcm[2] -= mfluid * rigid->gvec[2];
+    }
+
+    // no relative flow: no drag (no flow direction to project along)
+
     if (bd.umag == 0.0) continue;
 
     // shape factors from the body volume and surface area,
