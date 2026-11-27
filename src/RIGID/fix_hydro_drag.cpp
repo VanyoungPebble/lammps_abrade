@@ -13,6 +13,7 @@
 #include "force.h"
 #include "math_const.h"
 #include "math_extra.h"
+#include "memory.h"
 
 #include <libqhullcpp/Qhull.h>
 #include <libqhullcpp/QhullError.h>
@@ -105,9 +106,24 @@ void plane_basis(const double *dir, double *e1, double *e2)
 ------------------------------------------------------------------------- */
 
 FixHydroDrag::FixHydroDrag(LAMMPS *lmp, int narg, char **arg) :
-    Fix(lmp, narg, arg), rho(0.0), nu(0.0), buoyancy_flag(0)
+    Fix(lmp, narg, arg), rho(0.0), nu(0.0), buoyancy_flag(0), force_flag(0), nmax(0)
 {
   flow[0] = flow[1] = flow[2] = 0.0;
+  for (int k = 0; k < 6; k++) ftotal[k] = ftotal_all[k] = 0.0;
+
+  // global vector for thermo: f_ID[1-3] total drag, f_ID[4-6] total buoyancy
+  // local array for dump local: one row per body, 10 columns (see add_body_forces())
+
+  vector_flag = 1;
+  size_vector = 6;
+  global_freq = 1;
+  extvector = 1;
+
+  local_flag = 1;
+  size_local_rows = 0;
+  size_local_cols = 10;
+  local_freq = 1;
+  array_local = nullptr;
 
   // rho, nu and flow are required; remember which ones were given
 
@@ -146,6 +162,13 @@ FixHydroDrag::FixHydroDrag(LAMMPS *lmp, int narg, char **arg) :
   if (!flow_set) error->all(FLERR, "Fix hydro/drag requires the flow keyword");
   if (rho <= 0.0) error->all(FLERR, "Fix hydro/drag rho must be > 0");
   if (nu <= 0.0) error->all(FLERR, "Fix hydro/drag nu must be > 0");
+}
+
+/* ---------------------------------------------------------------------- */
+
+FixHydroDrag::~FixHydroDrag()
+{
+  memory->destroy(array_local);
 }
 
 /* ----------------------------------------------------------------------
@@ -187,6 +210,17 @@ void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
 
   const int nbody = rigid->nlocal_body;
   bodydata.resize(nbody);
+
+  // reset output: totals for the global vector, one local row per body
+
+  for (int k = 0; k < 6; k++) ftotal[k] = 0.0;
+  force_flag = 0;
+  if (nbody > nmax) {
+    memory->destroy(array_local);
+    nmax = nbody;
+    memory->create(array_local, nmax, size_local_cols, "hydro/drag:array_local");
+  }
+  size_local_rows = nbody;
 
   // 1. per body: relative velocity, and the plane (e1, e2) perpendicular
   //    to the flow, in body coordinates
@@ -235,14 +269,11 @@ void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
 
     if (buoyancy_flag) {
       const double mfluid = rho * b.volume;    // mass of displaced fluid
-      b.fcm[0] -= mfluid * rigid->gvec[0];
-      b.fcm[1] -= mfluid * rigid->gvec[1];
-      b.fcm[2] -= mfluid * rigid->gvec[2];
+      for (int k = 0; k < 3; k++) {
+        b.fcm[k] -= mfluid * rigid->gvec[k];
+        ftotal[3 + k] -= mfluid * rigid->gvec[k];
+      }
     }
-
-    // no relative flow: no drag (no flow direction to project along)
-
-    if (bd.umag == 0.0) continue;
 
     // shape factors from the body volume and surface area,
     // both kept up to date by fix rigid/abrade after abrasion
@@ -253,6 +284,21 @@ void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
     const double d = cbrt(6.0 * b.volume / MY_PI);
     double phi = MY_PI * d * d / b.surface_area;
     if (phi > 1.0) phi = 1.0;
+
+    // local output row for this body:
+    //   1 body ID (atom ID of its COM atom), 2 |u_rel|, 3 Re, 4 C_D,
+    //   5 phi, 6 phi_perp, 7 A_perp, 8-10 drag force
+    // without relative flow only columns 1, 2 (= 0) and 5 are set, the rest are 0
+
+    double *row = array_local[ibody];
+    for (int k = 0; k < size_local_cols; k++) row[k] = 0.0;
+    row[0] = static_cast<double>(atom->tag[b.ilocal]);
+    row[1] = bd.umag;
+    row[4] = phi;
+
+    // no relative flow: no drag (no flow direction to project along)
+
+    if (bd.umag == 0.0) continue;
 
     // projected area: 2d convex hull of the projected atom centres
 
@@ -295,10 +341,35 @@ void FixHydroDrag::add_body_forces(FixRigidAbrade *rigid)
     // add to the COM force only, not to the atoms, so drag never drives
     // abrasion; no torque
 
-    b.fcm[0] += coeff * bd.urel[0];
-    b.fcm[1] += coeff * bd.urel[1];
-    b.fcm[2] += coeff * bd.urel[2];
+    for (int k = 0; k < 3; k++) {
+      const double fdrag = coeff * bd.urel[k];
+      b.fcm[k] += fdrag;
+      ftotal[k] += fdrag;
+      row[7 + k] = fdrag;
+    }
+
+    // diagnostics only, not used for the force: Re and C_D
+    // (here |u| > 0, so dividing by it is safe)
+
+    row[2] = bd.umag * d / nu;
+    row[3] = (a1 + a2 * sqrt(bd.umag) + a3 * bd.umag) / bd.umag;
+    row[5] = phiperp;
+    row[6] = aperp;
   }
+}
+
+/* ----------------------------------------------------------------------
+   global vector: 1-3 total drag force, 4-6 total buoyancy force,
+   summed over all bodies, from the last call of add_body_forces()
+------------------------------------------------------------------------- */
+
+double FixHydroDrag::compute_vector(int n)
+{
+  if (force_flag == 0) {
+    MPI_Allreduce(ftotal, ftotal_all, 6, MPI_DOUBLE, MPI_SUM, world);
+    force_flag = 1;
+  }
+  return ftotal_all[n];
 }
 
 /* ----------------------------------------------------------------------

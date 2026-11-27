@@ -29,8 +29,10 @@ namespace LAMMPS_NS {
 class FixHydroDrag : public Fix {
  public:
   FixHydroDrag(class LAMMPS *, int, char **);
+  ~FixHydroDrag() override;
   int setmask() override;
   void init() override;
+  double compute_vector(int) override;
 
   // called by fix rigid/abrade in compute_forces_and_torques()
   void add_body_forces(class FixRigidAbrade *);
@@ -51,6 +53,14 @@ class FixHydroDrag : public Fix {
     double rmax;                                 // largest radius among those atoms
   };
   std::vector<BodyData> bodydata;    // one entry per body owned by this process
+
+  // output
+  // global vector: total drag force (3), total buoyancy force (3)
+  // local array: one row per owned body, see add_body_forces()
+
+  double ftotal[6], ftotal_all[6];    // this process / summed over all processes
+  int force_flag;                     // 1 if ftotal_all is up to date
+  int nmax;                           // rows allocated in array_local
 
   void collect_projected_points(class FixRigidAbrade *);
 };
