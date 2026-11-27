@@ -1,0 +1,104 @@
+# fix hydro/drag example: one abradable sphere starts from rest and is
+# carried along x by a uniform water flow (no gravity, no contacts).
+# fix hydro/drag currently supports only 1 MPI process.
+
+###############################################
+# Variable Definitions
+###############################################
+
+variable E equal 4.76*0.1                                   # Young's modulus [GPa]
+variable poisson equal 0.4                                  # Poisson ratio [-]
+variable G equal ${E}/(2*(1+${poisson}))                    # Shear modulus [GPa]
+variable kn equal (4*${G}/(3*((1-${poisson}))))*(1e+10)     # Normal elastic constant
+variable kt equal (4*${G}/(2-${poisson}))*(1e+10)           # Tangential elastic constant
+variable e equal 0.55                                       # Coefficient of restitution [-]
+variable xmu equal 0.39                                     # Friction coefficient [-]
+variable density equal 1.42                                 # Particle mass density [g/cm^3]
+variable H equal 0.001*(1e+10)                              # Indentation hardness [dyne/cm^2]
+
+# fluid: water in cgs units
+variable rho_f equal 1.0                                    # Fluid density [g/cm^3]
+variable nu_f equal 0.01                                    # Kinematic viscosity [cm^2/s]
+variable u_f equal 50.0                                     # Flow velocity along x [cm/s]
+
+# No contacts occur in this example, so a much larger timestep than the
+# usual DEM timestep is used. Use the normal DEM timestep when bodies collide.
+variable dt equal 1.0e-5                                    # s
+
+###############################################
+# Initialisation
+###############################################
+
+units           cgs
+boundary        p p p
+atom_style      hybrid molecular sphere
+dimension       3
+newton          on
+
+region box block -5 5 -5 5 -5 5 units box
+create_box 4 box angle/types 1 extra/angle/per/atom 10
+
+angle_style zero
+angle_coeff * 75.0
+
+molecule Sphere data.Sphere
+create_atoms 0 single 0.0 0.0 0.0 mol Sphere 1729871 units box
+
+# the body's owning (COM) atom is atom 1
+group owning id 1
+group owned subtract all owning
+set group owning type 4
+
+neighbor 0.2 multi
+comm_modify mode multi vel yes
+neigh_modify collection/type 2 *3, 4
+comm_modify cutoff/multi 1 0.0 cutoff/multi 2 5.0
+neigh_modify exclude molecule/intra all
+neigh_modify exclude group owning owned
+neigh_modify exclude molecule/inter owning
+
+pair_style granular
+pair_coeff * * hertz ${kn} ${e} tangential linear_history ${kt} 1.0 ${xmu} damping coeff_restitution limit_damping
+
+timestep ${dt}
+
+###############################################
+# Fix Definitions
+###############################################
+
+# fluid parameters; the fix is named "water" here, any ID works
+fix water all hydro/drag rho ${rho_f} nu ${nu_f} flow ${u_f} 0.0 0.0
+
+# "drag water" tells rigid/abrade to add the drag of fix "water" to each body
+fix abrade all rigid/abrade ${H} 0.25 ${density} molecule normals drag water
+
+# To add gravity and buoyancy, define a gravity fix, reference it with the
+# gravity keyword of rigid/abrade, and switch buoyancy on:
+#   fix grav none gravity 981.0 vector 0 0 -1
+#   fix water all hydro/drag rho ${rho_f} nu ${nu_f} flow ${u_f} 0.0 0.0 buoyancy yes
+#   fix abrade all rigid/abrade ${H} 0.25 ${density} molecule normals gravity grav drag water
+
+###############################################
+# Output
+###############################################
+
+# global: total drag force (f_water[1-3]) and total buoyancy force (f_water[4-6])
+thermo_style custom step time f_water[1] f_water[2] f_water[3]
+thermo 5000
+
+# per body: 1 body ID, 2 |u_rel|, 3 Re, 4 C_D, 5 phi, 6 phi_perp, 7 A_perp, 8-10 drag force
+# hydro/drag has no rows at step 0, so it gets its own dump local
+dump drag all local 5000 drag.dump f_water[1] f_water[2] f_water[3] f_water[4] &
+     f_water[5] f_water[6] f_water[7] f_water[8] f_water[9] f_water[10]
+dump_modify drag format float %.10g
+
+# body velocity from fix rigid/abrade
+compute body all rigid/local_abrade abrade id vx vy vz
+dump body all local 5000 body.dump c_body[1] c_body[2] c_body[3] c_body[4]
+dump_modify body format float %.10g
+
+###############################################
+# Running Simulation
+###############################################
+
+run 50000
