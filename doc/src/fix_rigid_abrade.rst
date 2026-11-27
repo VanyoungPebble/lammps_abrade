@@ -18,7 +18,7 @@ Syntax
 * molecule = bodystyle supported by this fix command
 
 * zero or more keyword/value pairs may be appended
-* keyword = *normals* or *remesh* or *equalise* or *offset* or *stationary* or *langevin* or *reinit* or *temp* or *iso* or *aniso* or *x* or *y* or *z* or *couple* or *tparam* or *pchain* or *dilate* or *infile* or *gravity*
+* keyword = *normals* or *remesh* or *equalise* or *offset* or *stationary* or *langevin* or *reinit* or *temp* or *iso* or *aniso* or *x* or *y* or *z* or *couple* or *tparam* or *pchain* or *dilate* or *infile* or *gravity* or *drag*
 
   .. parsed-literal::
 
@@ -55,6 +55,8 @@ Syntax
          filename = file with per-body values of mass, center of mass, moments of inertia
        *gravity* values = gravity-ID
          gravity-ID = ID of fix gravity command to add gravitational forces
+       *drag* values = drag-ID
+         drag-ID = ID of fix hydro/drag command to add hydrodynamic drag (and buoyancy) forces
 
 
 Examples
@@ -64,7 +66,8 @@ Examples
    
    fix 1 particles rigid/abrade 1e10 0.25 8 molecule 
    fix 1 particles rigid/abrade 1e20 0.4 10 molecule normals stationary   
-   fix 1 all rigid/abrade ${H} 0.25 8 molecule normals gravity 1 
+   fix 1 all rigid/abrade ${H} 0.25 8 molecule normals gravity 1
+   fix 1 all rigid/abrade ${H} 0.25 8 molecule normals gravity 1 drag water
    fix 1 all rigid/abrade ${H} 0.25 ${density} molecule remesh 0.95 equalise  
    fix 1 all rigid/abrade ${H} 0.25 ${density} molecule offset langevin 5e19 1e20 1e-2 1111 
 
@@ -163,6 +166,10 @@ used, surface atoms are offset towards their particle's center of mass by their 
 When applying gravitational forces to *rigid/abrade* bodies using the :doc:`fix gravity <fix_gravity>` command, the *gravity* keyword should also be used. Additionally, the :doc:`fix gravity <fix_gravity>` command
 should not include any atoms in rigid bodies. In contrast to the *rigid/small* style, there is no restriction on using bodies with overlap between the constituent atoms.
 
+The *drag* keyword names a :doc:`fix hydro/drag <fix_hydro_drag>` command that adds a hydrodynamic drag force, and optionally a buoyancy force, to each body.
+The fix is called every timestep after the atom forces have been summed and the Langevin and gravity forces have been added, and its forces are added to the
+center-of-mass force of each body only, never to the per-atom forces, so they do not drive abrasion. A warning is printed if a fix hydro/drag is defined but not named by the *drag* keyword.
+
 When restarting a simulation from a restart file, the *infile* keyword should be used with the corresponding .rigid restart file. This allows the velocity, angular momentum, and 
 total abraded volume of the rigid bodies to be conserved between simulations. The .rigid file also stores cumulative 
 per-atom data such as the total displacement amount. If no .rigid file is provided through the *infile* keyword when using the :doc:`read_restart <read_restart>` command, 
@@ -194,7 +201,7 @@ or :doc:`fix pour <fix_pour>`. The *mol* optional keyword from the *rigid/small*
 
 Related commands
 """"""""""""""""
-:doc:`fix_rigid <fix_rigid>`, :doc:`rigid/local_abrade <compute_rigid_local_abrade>`
+:doc:`fix_rigid <fix_rigid>`, :doc:`rigid/local_abrade <compute_rigid_local_abrade>`, :doc:`fix hydro/drag <fix_hydro_drag>`
 
 Default
 """""""
